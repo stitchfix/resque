@@ -6,8 +6,13 @@ module Resque
       @redis = redis
     end
 
+    # Punt on anyone using Resque.redis to do stuff and just delegate it through
     def method_missing(sym,*args,&block)
       @redis.send(sym,*args,&block)
+    end
+
+    def respond_to?(method,include_all=false)
+      @redis.respond_to?(method,include_all)
     end
 
     def identifier
@@ -71,13 +76,38 @@ module Resque
       @redis.lrem(redis_key_for_queue(queue), 0, data)
     end
 
-    # Private: do not call
-    def watch_queue(queue)
-      @redis.sadd(:queues, queue.to_s)
+    def remove_failed_queue(failed_queue_name=:failed)
+      @redis.del(failed_queue_name)
     end
 
-    def num_failed
-      @redis.llen(:failed).to_i
+    def num_failed(failed_queue_name=:failed)
+      @redis.llen(failed_queue_name).to_i
+    end
+
+    def failed_queue_names(find_queue_names_in_key=nil)
+      if find_queue_names_in_key.nil?
+        [:failed]
+      else
+        Array(@redis.smembers(find_queue_names_in_key))
+      end
+    end
+
+    def push_to_failed_queue(data,failed_queue_name=:failed)
+      @redis.rpush(failed_queue_name,data)
+    end
+
+    def clear_failed_queue(failed_queue_name=:failed)
+      @redis.del(failed_queue_name)
+    end
+
+    def update_item_in_failed_queue(index_in_failed_queue,new_item_data,failed_queue_name=:failed)
+      @redis.lset(failed_queue_name, index_in_failed_queue, new_item_data)
+    end
+
+    def remove_from_failed_queue(index_in_failed_queue,failed_queue_name=:failed)
+      hopefully_unique_value_we_can_use_to_delete_job = ""
+      @redis.lset(failed_queue_name, index_in_failed_queue, hopefully_unique_value_we_can_use_to_delete_job)
+      @redis.lrem(failed_queue_name, 1,                     hopefully_unique_value_we_can_use_to_delete_job)
     end
 
     def worker_ids
@@ -146,6 +176,11 @@ module Resque
       @redis.keys("*").map do |key|
         key.sub("#{redis.namespace}:", '')
       end
+    end
+
+    # Private: do not call
+    def watch_queue(queue)
+      @redis.sadd(:queues, queue.to_s)
     end
 
 
