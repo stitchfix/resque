@@ -190,6 +190,24 @@ module Resque
       end
     end
 
+    concerning "stats" do
+      def stat(stat)
+        @redis.get("stat:#{stat}").to_i
+      end
+
+      def increment_stat(stat, by = 1)
+        @redis.incrby("stat:#{stat}", by)
+      end
+
+      def decremet_stat(stat, by = 1)
+        @redis.decrby("stat:#{stat}", by)
+      end
+
+      def clear_stat(stat)
+        @redis.del("stat:#{stat}")
+      end
+    end
+
     concerning "private methods that were nonetheless exposes as public" do
       # Private: do not call
       def watch_queue(queue)
