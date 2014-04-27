@@ -102,6 +102,7 @@ module Resque
     self.redis = Redis.respond_to?(:connect) ? Redis.connect : "localhost:6379"
     self.redis
   end
+  alias :data_store :redis
 
   def redis_id
     @data_store.identifier

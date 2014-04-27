@@ -25,18 +25,18 @@ module Resque
     def push_to_queue(queue,encoded_item)
       @redis.pipelined do
         watch_queue(queue)
-        @redis.rpush "queue:#{queue}", encoded_item
+        @redis.rpush redis_key_for_queue(queue), encoded_item
       end
     end
 
     # Pop whatever is on queue
     def pop_from_queue(queue)
-      @redis.lpop("queue:#{queue}")
+      @redis.lpop(redis_key_for_queue(queue))
     end
 
     # Get the number of items in the queue
     def queue_size(queue)
-      @redis.llen("queue:#{queue}").to_i
+      @redis.llen(redis_key_for_queue(queue)).to_i
     end
 
     # Examine items in the queue.
@@ -44,7 +44,7 @@ module Resque
     # NOTE: if count is 1, you will get back an object, otherwise you will
     #       get an Array.  I'm not making this up.
     def peek_in_queue(queue, start = 0, count = 1)
-      list_range("queue:#{queue}", start, count)
+      list_range(redis_key_for_queue(queue), start, count)
     end
 
     def queue_names
@@ -54,8 +54,21 @@ module Resque
     def remove_queue(queue)
       @redis.pipelined do
         @redis.srem(:queues, queue.to_s)
-        @redis.del("queue:#{queue}")
+        @redis.del(redis_key_for_queue(queue))
       end
+    end
+
+    def add_failed_queue(failed_queue_name)
+      @redis.sadd(:failed_queues, failed_queue_name)
+    end
+
+    def everything_in_queue(queue)
+      @redis.lrange(redis_key_for_queue(queue), 0, -1)
+    end
+
+    # Remove data from the queue, if it's there, returning the number of removed elements
+    def remove_from_queue(queue,data)
+      @redis.lrem(redis_key_for_queue(queue), 0, data)
     end
 
     # Private: do not call
@@ -84,5 +97,13 @@ module Resque
         Array(@redis.lrange(key, start, start+count-1))
       end
     end
+
+  private
+    
+    def redis_key_for_queue(queue)
+      "queue:#{queue}"
+    end
+
+
   end
 end
