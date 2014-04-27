@@ -18,6 +18,7 @@ require 'resque/log_formatters/very_verbose_formatter'
 require 'resque/job'
 require 'resque/worker'
 require 'resque/plugin'
+require 'resque/data_store'
 
 require 'resque/vendor/utf8_util'
 
@@ -84,13 +85,13 @@ module Resque
       end
       namespace ||= :resque
 
-      @redis = Redis::Namespace.new(namespace, :redis => redis)
+      @redis = Resque::DataStore.new(Redis::Namespace.new(namespace, :redis => redis))
     when Redis::Namespace
       @redis = server
     when Hash
-      @redis = Redis::Namespace.new(:resque, :redis => Redis.new(server))
+      @redis = Resque::DataStore.new(Redis::Namespace.new(:resque, :redis => Redis.new(server)))
     else
-      @redis = Redis::Namespace.new(:resque, :redis => server)
+      @redis = Resque::DataStore.new(Redis::Namespace.new(:resque, :redis => server))
     end
   end
 
