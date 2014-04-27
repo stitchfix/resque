@@ -6,190 +6,204 @@ module Resque
       @redis = redis
     end
 
-    # Punt on anyone using Resque.redis to do stuff and just delegate it through
-    def method_missing(sym,*args,&block)
-      @redis.send(sym,*args,&block)
+    def self.concerning(_,&block)
+      block.call
     end
 
-    def respond_to?(method,include_all=false)
-      @redis.respond_to?(method,include_all)
-    end
+    concerning "compatibility with extra-Resque classes using Resque.redis directly" do
+      def method_missing(sym,*args,&block)
+        @redis.send(sym,*args,&block)
+      end
 
-    def identifier
-      # support 1.x versions of redis-rb
-      if @redis.respond_to?(:server)
-        @redis.server
-      elsif @redis.respond_to?(:nodes) # distributed
-        @redis.nodes.map { |n| n.id }.join(', ')
-      else
-        @redis.client.id
+      def respond_to?(method,include_all=false)
+        @redis.respond_to?(method,include_all)
       end
     end
 
-    # Push something to a queue
-    def push_to_queue(queue,encoded_item)
-      @redis.pipelined do
-        watch_queue(queue)
-        @redis.rpush redis_key_for_queue(queue), encoded_item
+    concerning "general server stuff" do
+      def identifier
+        # support 1.x versions of redis-rb
+        if @redis.respond_to?(:server)
+          @redis.server
+        elsif @redis.respond_to?(:nodes) # distributed
+          @redis.nodes.map { |n| n.id }.join(', ')
+        else
+          @redis.client.id
+        end
+      end
+
+      def reconnect
+        @redis.client.reconnect
+      end
+
+      # Returns an array of all known Resque keys in Redis. Redis' KEYS operation
+      # is O(N) for the keyspace, so be careful - this can be slow for big databases.
+      def all_resque_keys
+        @redis.keys("*").map do |key|
+          key.sub("#{redis.namespace}:", '')
+        end
       end
     end
 
-    # Pop whatever is on queue
-    def pop_from_queue(queue)
-      @redis.lpop(redis_key_for_queue(queue))
-    end
+    concerning "the job queues" do
+      def push_to_queue(queue,encoded_item)
+        @redis.pipelined do
+          watch_queue(queue)
+          @redis.rpush redis_key_for_queue(queue), encoded_item
+        end
+      end
 
-    # Get the number of items in the queue
-    def queue_size(queue)
-      @redis.llen(redis_key_for_queue(queue)).to_i
-    end
+      # Pop whatever is on queue
+      def pop_from_queue(queue)
+        @redis.lpop(redis_key_for_queue(queue))
+      end
 
-    # Examine items in the queue.
-    #
-    # NOTE: if count is 1, you will get back an object, otherwise you will
-    #       get an Array.  I'm not making this up.
-    def peek_in_queue(queue, start = 0, count = 1)
-      list_range(redis_key_for_queue(queue), start, count)
-    end
+      # Get the number of items in the queue
+      def queue_size(queue)
+        @redis.llen(redis_key_for_queue(queue)).to_i
+      end
 
-    def queue_names
-      Array(@redis.smembers(:queues))
-    end
+      # Examine items in the queue.
+      #
+      # NOTE: if count is 1, you will get back an object, otherwise you will
+      #       get an Array.  I'm not making this up.
+      def peek_in_queue(queue, start = 0, count = 1)
+        list_range(redis_key_for_queue(queue), start, count)
+      end
 
-    def remove_queue(queue)
-      @redis.pipelined do
-        @redis.srem(:queues, queue.to_s)
-        @redis.del(redis_key_for_queue(queue))
+      def queue_names
+        Array(@redis.smembers(:queues))
+      end
+
+      def remove_queue(queue)
+        @redis.pipelined do
+          @redis.srem(:queues, queue.to_s)
+          @redis.del(redis_key_for_queue(queue))
+        end
+      end
+
+      def everything_in_queue(queue)
+        @redis.lrange(redis_key_for_queue(queue), 0, -1)
+      end
+
+      # Remove data from the queue, if it's there, returning the number of removed elements
+      def remove_from_queue(queue,data)
+        @redis.lrem(redis_key_for_queue(queue), 0, data)
       end
     end
 
-    def add_failed_queue(failed_queue_name)
-      @redis.sadd(:failed_queues, failed_queue_name)
-    end
+    concerning "the failed queue(s)" do
+      def add_failed_queue(failed_queue_name)
+        @redis.sadd(:failed_queues, failed_queue_name)
+      end
 
-    def everything_in_queue(queue)
-      @redis.lrange(redis_key_for_queue(queue), 0, -1)
-    end
+      def remove_failed_queue(failed_queue_name=:failed)
+        @redis.del(failed_queue_name)
+      end
 
-    # Remove data from the queue, if it's there, returning the number of removed elements
-    def remove_from_queue(queue,data)
-      @redis.lrem(redis_key_for_queue(queue), 0, data)
-    end
+      def num_failed(failed_queue_name=:failed)
+        @redis.llen(failed_queue_name).to_i
+      end
 
-    def remove_failed_queue(failed_queue_name=:failed)
-      @redis.del(failed_queue_name)
-    end
+      def failed_queue_names(find_queue_names_in_key=nil)
+        if find_queue_names_in_key.nil?
+          [:failed]
+        else
+          Array(@redis.smembers(find_queue_names_in_key))
+        end
+      end
 
-    def num_failed(failed_queue_name=:failed)
-      @redis.llen(failed_queue_name).to_i
-    end
+      def push_to_failed_queue(data,failed_queue_name=:failed)
+        @redis.rpush(failed_queue_name,data)
+      end
 
-    def failed_queue_names(find_queue_names_in_key=nil)
-      if find_queue_names_in_key.nil?
-        [:failed]
-      else
-        Array(@redis.smembers(find_queue_names_in_key))
+      def clear_failed_queue(failed_queue_name=:failed)
+        @redis.del(failed_queue_name)
+      end
+
+      def update_item_in_failed_queue(index_in_failed_queue,new_item_data,failed_queue_name=:failed)
+        @redis.lset(failed_queue_name, index_in_failed_queue, new_item_data)
+      end
+
+      def remove_from_failed_queue(index_in_failed_queue,failed_queue_name=:failed)
+        hopefully_unique_value_we_can_use_to_delete_job = ""
+        @redis.lset(failed_queue_name, index_in_failed_queue, hopefully_unique_value_we_can_use_to_delete_job)
+        @redis.lrem(failed_queue_name, 1,                     hopefully_unique_value_we_can_use_to_delete_job)
       end
     end
 
-    def push_to_failed_queue(data,failed_queue_name=:failed)
-      @redis.rpush(failed_queue_name,data)
-    end
+    concerning "workers" do
+      def worker_ids
+        Array(@redis.smembers(:workers))
+      end
 
-    def clear_failed_queue(failed_queue_name=:failed)
-      @redis.del(failed_queue_name)
-    end
+      # Given a list of worker ids, returns a map of those ids to the worker's value 
+      # in redis, even if that value maps to nil
+      def workers_map(worker_ids)
+        redis_keys = worker_ids.map { |id| "worker:#{id}" }
+        @redis.mapped_mget(*redis_keys)
+      end
 
-    def update_item_in_failed_queue(index_in_failed_queue,new_item_data,failed_queue_name=:failed)
-      @redis.lset(failed_queue_name, index_in_failed_queue, new_item_data)
-    end
+      # return the worker's payload i.e. job
+      def get_worker_payload(worker_id)
+        @redis.get("worker:#{worker_id}")
+      end
 
-    def remove_from_failed_queue(index_in_failed_queue,failed_queue_name=:failed)
-      hopefully_unique_value_we_can_use_to_delete_job = ""
-      @redis.lset(failed_queue_name, index_in_failed_queue, hopefully_unique_value_we_can_use_to_delete_job)
-      @redis.lrem(failed_queue_name, 1,                     hopefully_unique_value_we_can_use_to_delete_job)
-    end
+      def worker_exists?(worker_id)
+        @redis.sismember(:workers, worker_id)
+      end
 
-    def worker_ids
-      Array(@redis.smembers(:workers))
-    end
+      def register_worker(worker)
+        @redis.pipelined do
+          @redis.sadd(:workers, worker)
+          worker_started(worker)
+        end
+      end
 
-    # Given a list of worker ids, returns a map of those ids to the worker's value 
-    # in redis, even if that value maps to nil
-    def workers_map(worker_ids)
-      redis_keys = worker_ids.map { |id| "worker:#{id}" }
-      @redis.mapped_mget(*redis_keys)
-    end
+      def worker_started(worker)
+        @redis.set(redis_key_for_worker_start_time(worker), Time.now.to_s)
+      end
 
-    # return the worker's payload i.e. job
-    def get_worker_payload(worker_id)
-      @redis.get("worker:#{worker_id}")
-    end
+      def unregister_worker(worker,&block)
+        @redis.pipelined do
+          @redis.srem(:workers, worker)
+          @redis.del(redis_key_for_worker(worker))
+          @redis.del(redis_key_for_worker_start_time(worker))
 
-    def worker_exists?(worker_id)
-      @redis.sismember(:workers, worker_id)
-    end
+          block.call
+        end
+      end
 
-    def register_worker(worker)
-      @redis.pipelined do
-        @redis.sadd(:workers, worker)
-        worker_started(worker)
+      def set_worker_payload(worker,data)
+        @redis.set(redis_key_for_worker(worker), data)
+      end
+
+      def worker_start_time(worker)
+        @redis.get(redis_key_for_worker_start_time(worker))
+      end
+
+      def worker_done_working(worker,&block)
+        @redis.pipelined do
+          @redis.del(redis_key_for_worker(worker))
+          block.call
+        end
       end
     end
 
-    def worker_started(worker)
-      @redis.set("worker:#{worker}:started", Time.now.to_s)
-    end
-
-    def unregister_worker(worker,&block)
-      @redis.pipelined do
-        @redis.srem(:workers, worker)
-        @redis.del("worker:#{worker}")
-        @redis.del("worker:#{worker}:started")
-
-        block.call
+    concerning "private methods that were nonetheless exposes as public" do
+      # Private: do not call
+      def watch_queue(queue)
+        @redis.sadd(:queues, queue.to_s)
       end
-    end
-
-    def set_worker_payload(worker,data)
-      @redis.set("worker:#{worker}", data)
-    end
-
-    def worker_start_time(worker)
-      @redis.get("worker:#{worker}:started")
-    end
-
-    def worker_done_working(worker,&block)
-      @redis.pipelined do
-        @redis.del("worker:#{worker}")
-        block.call
-      end
-    end
-
-    def reconnect
-      @redis.client.reconnect
-    end
-
-    # Returns an array of all known Resque keys in Redis. Redis' KEYS operation
-    # is O(N) for the keyspace, so be careful - this can be slow for big databases.
-    def all_resque_keys
-      @redis.keys("*").map do |key|
-        key.sub("#{redis.namespace}:", '')
-      end
-    end
-
-    # Private: do not call
-    def watch_queue(queue)
-      @redis.sadd(:queues, queue.to_s)
-    end
 
 
-    # Private: do not call
-    def list_range(key, start = 0, count = 1)
-      if count == 1
-        @redis.lindex(key, start)
-      else
-        Array(@redis.lrange(key, start, start+count-1))
+      # Private: do not call
+      def list_range(key, start = 0, count = 1)
+        if count == 1
+          @redis.lindex(key, start)
+        else
+          Array(@redis.lrange(key, start, start+count-1))
+        end
       end
     end
 
@@ -199,6 +213,13 @@ module Resque
       "queue:#{queue}"
     end
 
+    def redis_key_for_worker(worker)
+      "worker:#{worker}"
+    end
+
+    def redis_key_for_worker_start_time(worker)
+      "#{redis_key_for_worker(worker)}:started"
+    end
 
   end
 end
