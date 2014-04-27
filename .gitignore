@@ -5,4 +5,6 @@ Gemfile.lock
 test/dump.rdb
 test/dump-cluster.rdb
 test/stdout
-*.swp
+.ruby-version
+.ruby-gemset
+*.sw?
