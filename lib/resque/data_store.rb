@@ -80,6 +80,66 @@ module Resque
       @redis.llen(:failed).to_i
     end
 
+    def worker_ids
+      Array(@redis.smembers(:workers))
+    end
+
+    # Given a list of worker ids, returns a map of those ids to the worker's value 
+    # in redis, even if that value maps to nil
+    def workers_map(worker_ids)
+      redis_keys = worker_ids.map { |id| "worker:#{id}" }
+      @redis.mapped_mget(*redis_keys)
+    end
+
+    # return the worker's payload i.e. job
+    def get_worker_payload(worker_id)
+      @redis.get("worker:#{worker_id}")
+    end
+
+    def worker_exists?(worker_id)
+      @redis.sismember(:workers, worker_id)
+    end
+
+    def register_worker(worker)
+      @redis.pipelined do
+        @redis.sadd(:workers, worker)
+        worker_started(worker)
+      end
+    end
+
+    def worker_started(worker)
+      @redis.set("worker:#{worker}:started", Time.now.to_s)
+    end
+
+    def unregister_worker(worker,&block)
+      @redis.pipelined do
+        @redis.srem(:workers, worker)
+        @redis.del("worker:#{worker}")
+        @redis.del("worker:#{worker}:started")
+
+        block.call
+      end
+    end
+
+    def set_worker_payload(worker,data)
+      @redis.set("worker:#{worker}", data)
+    end
+
+    def worker_start_time(worker)
+      @redis.get("worker:#{worker}:started")
+    end
+
+    def worker_done_working(worker,&block)
+      @redis.pipelined do
+        @redis.del("worker:#{worker}")
+        block.call
+      end
+    end
+
+    def reconnect
+      @redis.client.reconnect
+    end
+
     # Returns an array of all known Resque keys in Redis. Redis' KEYS operation
     # is O(N) for the keyspace, so be careful - this can be slow for big databases.
     def all_resque_keys
