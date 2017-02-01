@@ -217,8 +217,9 @@ module Resque
             procline "Forked #{@child} at #{Time.now.to_i}"
             begin
               Process.waitpid(@child)
-            rescue SystemCallError
-              nil
+              log_with_severity :debug, "Child process #{@child} has completed"
+            rescue SystemCallError => ex
+              log_with_severity :debug, "Caught SystemCallError: #{ex.message} ( #{ex.backtrace.join("; ")} )"
             end
             job.fail(DirtyExit.new("Child process received unhandled signal #{$?.stopsig}")) if $?.signaled?
           else
@@ -253,6 +254,8 @@ module Resque
         log_with_severity :error, "Failed to start worker : #{exception.inspect}"
 
         unregister_worker(exception)
+      else
+        log_with_severity :debug, "Caught #{exception}, but since it's not a SystemExit AND we're the child process AND exit hooks ran OK, ignoring"
       end
     end
 
