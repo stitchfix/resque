@@ -221,7 +221,7 @@ module Resque
             rescue SystemCallError => ex
               log_with_severity :debug, "Caught SystemCallError: #{ex.message} ( #{ex.backtrace.join("; ")} )"
             end
-            job.fail(DirtyExit.new("Child process received unhandled signal #{$?.stopsig}")) if $?.signaled?
+            job.fail(DirtyExit.new("Child process received unhandled signal: stopsig: '#{$?.stopsig}', termsig: '#{$?.termsig}'. #{$?.inspect}")) if $?.signaled?
           else
             unregister_signal_handlers if will_fork? && term_child
             begin
