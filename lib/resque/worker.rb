@@ -206,6 +206,8 @@ module Resque
       loop do
         break if shutdown?
 
+        log_with_severity :info, "REDIS: #{Resque.redis.inspect}"
+
         if not paused? and job = reserve
           log_with_severity :info, "got: #{job.inspect}"
           job.worker = self
