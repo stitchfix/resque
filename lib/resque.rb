@@ -37,6 +37,7 @@ module Resque
 
   # Given a string, returns a Ruby object.
   def decode(object)
+    logger.info("decoding after pop: #{object.inspect}")
     return unless object
 
     begin
@@ -46,6 +47,7 @@ module Resque
         MultiJson.decode object
       end
     rescue ::MultiJson::DecodeError => e
+      logger.info("decode error from: #{object.inspect}")
       raise Helpers::DecodeException, e.message, e.backtrace
     end
   end
@@ -275,6 +277,9 @@ module Resque
   #
   # Returns a Ruby object.
   def pop(queue)
+    logger.info "all queues: #{queues.join(', ')}"
+    logger.info "size of #{queue} is #{size(queue)}"
+    logger.info "popping from #{queue}"
     decode redis.lpop("queue:#{queue}")
   end
 

@@ -240,7 +240,7 @@ module Resque
           done_working
           @child = nil
         else
-          log_with_severity :debug, "paused: #{paused?}"
+          log_with_severity :debug, "paused: #{paused? || false}"
           log_with_severity :debug, "job is #{job.inspect}"
 
           break if interval.zero?
@@ -308,6 +308,8 @@ module Resque
         if job = Resque.reserve(queue)
           log_with_severity :debug, "Found job on #{queue}"
           return job
+        else
+          log_with_severity :debug, "Did not find job on #{queue}"
         end
       end
 
