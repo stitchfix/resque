@@ -240,6 +240,9 @@ module Resque
           done_working
           @child = nil
         else
+          log_with_severity :debug, "paused: #{paused?}"
+          log_with_severity :debug, "job is #{job.inspect}"
+
           break if interval.zero?
           log_with_severity :debug, "Sleeping for #{interval} seconds"
           procline paused? ? "Paused" : "Waiting for #{queues.join(',')}"
@@ -310,6 +313,7 @@ module Resque
 
       nil
     rescue Exception => e
+      log_with_severity :info, "Error reserving job: #{e.inspect}"
       log_with_severity :error, "Error reserving job: #{e.inspect}"
       log_with_severity :error, e.backtrace.join("\n")
       raise e

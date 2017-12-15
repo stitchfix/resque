@@ -433,6 +433,7 @@ module Resque
   #
   # This method is considered part of the `stable` API.
   def reserve(queue)
+    logger.info "calling Job::reserve with queue: #{queue}"
     Job.reserve(queue)
   end
 
