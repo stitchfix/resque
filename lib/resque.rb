@@ -278,7 +278,7 @@ module Resque
   # Returns a Ruby object.
   def pop(queue)
     logger.info "all queues: #{queues.join(', ')}"
-    logger.info "size of #{queue} is #{size(queue)}"
+    logger.info "size of #{queue} is #{Resque.size(queue)}"
     logger.info "popping from #{queue}"
     decode redis.lpop("queue:#{queue}")
   end
