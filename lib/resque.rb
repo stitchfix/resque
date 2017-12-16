@@ -279,6 +279,8 @@ module Resque
   def pop(queue)
     logger.info "all queues: #{queues.join(', ')}"
     logger.info "size of #{queue} is #{Resque.size(queue)}"
+    size = Resque.redis.redis.llen("resque:queue:#{queue}")
+    logger.info "Size accourding to redis is: #{size}"
     logger.info "popping from #{queue}"
     decode redis.lpop("queue:#{queue}")
   end
