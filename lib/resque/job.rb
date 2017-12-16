@@ -43,7 +43,7 @@ module Resque
     def self.decode(object)
       Resque.decode(object)
     end
-    
+
     # Given a word with dashes, returns a camel cased version of it.
     def classify(dashed_word)
       Resque.classify(dashed_word)
@@ -136,8 +136,10 @@ module Resque
     # Given a string queue name, returns an instance of Resque::Job
     # if any jobs are available. If not, returns nil.
     def self.reserve(queue)
+      puts "Job.reserve: Popping from queue #{queue}"
+      puts "Job.reserve: Queue size: #{Resque.size(queue)}"
       popped = Resque.pop(queue)
-      puts "popped #{popped} from queue"
+      puts "Job.reserve: popped #{popped} from queue"
       return unless payload = popped
       new(queue, payload)
     end
