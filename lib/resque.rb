@@ -280,7 +280,8 @@ module Resque
     logger.info "all queues: #{queues.join(', ')}"
     begin
       size = Resque.redis.redis.llen("resque:queue:#{queue}")
-      logger.info "Size according to redis on '#{Resque.redis.redis}' is: #{size}"
+      logger.info Resque.redis.redis.connection.to_s
+      logger.info "Size according to redis is: #{size}"
     rescue Exception => e
       logger.info e
     end
