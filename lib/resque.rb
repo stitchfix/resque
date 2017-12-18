@@ -282,6 +282,10 @@ module Resque
       size = Resque.redis.redis.llen("resque:queue:#{queue}")
       logger.info Resque.redis.redis.connection.to_s
       logger.info "Size according to redis is: #{size}"
+      logger.info "Keys:"
+      logger.info `redis-cli -h #{Resque.redis.redis.connection[:host]} keys *`
+      logger.info "CLI Size:"
+      logger.info `redis-cli -h #{Resque.redis.redis.connection[:host]} llen resque:queue:#{queue}`
     rescue Exception => e
       logger.info e
     end
